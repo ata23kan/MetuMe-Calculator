@@ -23,7 +23,8 @@
       border-radius: 20px;
       padding: 20px;
       box-shadow: 0 20px 60px rgba(0,0,0,.6);
-      width: 420px;
+      max-width: 420px;
+      width: 95vw;
     }
 
     /* ── Header bar ── */
@@ -230,7 +231,7 @@
     <button class="key key-trig" onclick="inputTrig('asin')">sin⁻¹</button>
     <button class="key key-trig" onclick="inputTrig('acos')">cos⁻¹</button>
     <button class="key key-trig" onclick="inputTrig('atan')">tan⁻¹</button>
-    <button class="key key-fn"   onclick="inputFn('logb')">log_b</button>
+    <button class="key key-fn"   onclick="inputFn('logb')">log_(</button>
     <button class="key key-fn"   onclick="insertToken('**','^')">xʸ</button>
 
     <!-- Row 3: utility + sqrt + x² -->
@@ -288,6 +289,8 @@
    raw  – the JavaScript-evaluable fragment
    disp – the human-readable fragment shown to the user
 ═══════════════════════════════════════════════ */
+const MAX_HISTORY = 5; // maximum number of history entries to retain
+
 let tokens      = [];    // array of {raw, disp}
 let cursorIdx   = 0;     // insert/cursor position within tokens array
 let angleMode   = 'deg'; // 'deg' | 'rad'
@@ -464,14 +467,14 @@ function historyUp() {
   } else {
     return; // already at oldest entry
   }
-  _loadHistoryEntry(historyIdx);
+  loadHistoryEntry(historyIdx);
 }
 
 function historyDown() {
   if (historyIdx === -1) return;
   if (historyIdx < history.length - 1) {
     historyIdx++;
-    _loadHistoryEntry(historyIdx);
+    loadHistoryEntry(historyIdx);
   } else {
     // Return to the live editing state
     historyIdx = -1;
@@ -487,7 +490,7 @@ function historyDown() {
   }
 }
 
-function _loadHistoryEntry(idx) {
+function loadHistoryEntry(idx) {
   const entry = history[idx];
   tokens = entry.tokens.map(t => ({ ...t }));
   cursorIdx = tokens.length;
@@ -501,7 +504,9 @@ function _loadHistoryEntry(idx) {
 /* ═══════════════════════════════════════════════
    DISPLAY
 ═══════════════════════════════════════════════ */
-// A placeholder character that won't appear in normal input
+// A placeholder character (ASCII SOH, \x01) that won't appear in normal input.
+// It marks the cursor position before HTML escaping so the cursor span
+// survives the escapeHtml → renderFractions pipeline unchanged.
 const CURSOR_PH = '\x01';
 
 function getDisplayHtml() {
@@ -572,6 +577,7 @@ function calculate() {
     )(
       makeTrigFn('sin'),   makeTrigFn('cos'),   makeTrigFn('tan'),
       makeATrigFn('asin'), makeATrigFn('acos'), makeATrigFn('atan'),
+      // __logb(base, x) computes log base `base` of `x` via the change-of-base formula
       (base, x) => Math.log(x) / Math.log(base)
     );
   } catch (e) {
@@ -592,8 +598,8 @@ function calculate() {
 
   const formatted = formatNumber(result);
 
-  // Add to history (keep last 5)
-  if (history.length >= 5) history.shift();
+  // Add to history (keep last MAX_HISTORY entries)
+  if (history.length >= MAX_HISTORY) history.shift();
   history.push({ tokens: tokens.map(t => ({ ...t })), result: formatted });
   historyIdx = -1;
 
