@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MetuMe Scientific Calculator</title>
+  <style>
+    /* ── Reset & base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a2e;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* ── Calculator shell ── */
+    .calculator {
+      background: #16213e;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.6);
+      width: 380px;
+    }
+
+    /* ── Header bar ── */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .title {
+      color: #e94560;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    /* ── Angle mode toggle ── */
+    .angle-mode-wrapper {
+      position: relative;
+    }
+
+    .angle-btn {
+      background: #0f3460;
+      color: #e2e8f0;
+      border: 1px solid #e94560;
+      border-radius: 8px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .angle-btn:hover { background: #e94560; }
+
+    .angle-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      background: #0f3460;
+      border: 1px solid #e94560;
+      border-radius: 10px;
+      overflow: hidden;
+      z-index: 10;
+      min-width: 160px;
+    }
+    .angle-menu.open { display: block; }
+
+    .angle-menu button {
+      display: block;
+      width: 100%;
+      padding: 8px 16px;
+      background: transparent;
+      color: #e2e8f0;
+      border: none;
+      text-align: left;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .angle-menu button:hover { background: #e94560; }
+    .angle-menu button.active { background: #e94560; font-weight: 700; }
+
+    /* ── Display area ── */
+    .display-wrapper {
+      background: #0a0a1a;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      border: 1px solid #0f3460;
+      min-height: 90px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    #expr-display {
+      color: #94a3b8;
+      font-size: 15px;
+      word-break: break-all;
+      min-height: 22px;
+      line-height: 1.4;
+    }
+
+    #main-display {
+      color: #e2e8f0;
+      font-size: 32px;
+      font-weight: 300;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+
+    /* fraction display */
+    .frac-display {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      vertical-align: middle;
+      margin: 0 2px;
+    }
+    .frac-display .frac-num,
+    .frac-display .frac-den {
+      font-size: 18px;
+      line-height: 1.1;
+    }
+    .frac-display .frac-bar {
+      width: 100%;
+      border-top: 2px solid #e2e8f0;
+    }
+
+    /* ── Button grid ── */
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+
+    /* base button style */
+    button.key {
+      border: none;
+      border-radius: 10px;
+      padding: 14px 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter .15s, transform .1s;
+      line-height: 1;
+    }
+    button.key:active { transform: scale(.93); filter: brightness(1.3); }
+
+    /* colour variants */
+    .key-num   { background: #1a2a4a; color: #e2e8f0; }
+    .key-op    { background: #e94560; color: #fff; }
+    .key-fn    { background: #0f3460; color: #64b5f6; }
+    .key-trig  { background: #0f3460; color: #81c784; }
+    .key-util  { background: #1e3a5f; color: #ffd54f; }
+    .key-eq    { background: #e94560; color: #fff; font-size: 20px; }
+    .key-clear { background: #7f1d1d; color: #fca5a5; }
+
+    .span2 { grid-column: span 2; }
+
+    /* hover brightness */
+    .key-num:hover   { filter: brightness(1.25); }
+    .key-op:hover    { filter: brightness(1.2); }
+    .key-fn:hover    { filter: brightness(1.3); }
+    .key-trig:hover  { filter: brightness(1.3); }
+    .key-util:hover  { filter: brightness(1.3); }
+    .key-eq:hover    { filter: brightness(1.2); }
+    .key-clear:hover { filter: brightness(1.3); }
+
+    /* ── Fraction mode indicator ── */
+    .frac-indicator {
+      display: none;
+      text-align: center;
+      color: #ffd54f;
+      font-size: 11px;
+      margin-bottom: 8px;
+      letter-spacing: .5px;
+    }
+    .frac-indicator.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<div class="calculator">
+
+  <!-- Header -->
+  <div class="header">
+    <span class="title">MetuMe · Scientific</span>
+    <div class="angle-mode-wrapper">
+      <button class="angle-btn" id="angle-toggle-btn">DEG ▾</button>
+      <div class="angle-menu" id="angle-menu">
+        <button id="mode-deg" class="active" onclick="setAngleMode('deg')">DEG – Degrees</button>
+        <button id="mode-rad" onclick="setAngleMode('rad')">RAD – Radians</button>
+        <hr style="border-color:#1a3a5f;margin:4px 0">
+        <button onclick="convertAndInsert('deg2rad')">Convert selection → RAD</button>
+        <button onclick="convertAndInsert('rad2deg')">Convert selection → DEG</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Display -->
+  <div class="display-wrapper">
+    <div id="expr-display"></div>
+    <div id="main-display">0</div>
+  </div>
+
+  <!-- Fraction mode hint -->
+  <div class="frac-indicator" id="frac-indicator">⅟ Fraction mode ON – enter numerator, press ⅟, enter denominator</div>
+
+  <!-- Buttons (5 columns) -->
+  <div class="buttons">
+
+    <!-- Row 1: trig -->
+    <button class="key key-trig" onclick="inputTrig('sin')">sin</button>
+    <button class="key key-trig" onclick="inputTrig('cos')">cos</button>
+    <button class="key key-trig" onclick="inputTrig('tan')">tan</button>
+    <button class="key key-fn"   onclick="inputFn('log10')">log</button>
+    <button class="key key-fn"   onclick="inputFn('ln')">ln</button>
+
+    <!-- Row 2: inverse trig -->
+    <button class="key key-trig" onclick="inputTrig('asin')">sin⁻¹</button>
+    <button class="key key-trig" onclick="inputTrig('acos')">cos⁻¹</button>
+    <button class="key key-trig" onclick="inputTrig('atan')">tan⁻¹</button>
+    <button class="key key-fn"   onclick="inputFn('sqrt')">√</button>
+    <button class="key key-fn"   onclick="inputFn('pow2')">x²</button>
+
+    <!-- Row 3: utility -->
+    <button class="key key-util" onclick="inputPi()">π</button>
+    <button class="key key-util" onclick="inputE()">e</button>
+    <button class="key key-util" onclick="toggleFractionMode()">⅟</button>
+    <button class="key key-fn"   onclick="inputChar('(')">( </button>
+    <button class="key key-fn"   onclick="inputChar(')')"> )</button>
+
+    <!-- Row 4: clear / back -->
+    <button class="key key-clear span2" onclick="clearAll()">AC</button>
+    <button class="key key-util" onclick="backspace()">⌫</button>
+    <button class="key key-op"  onclick="inputChar('%')">%</button>
+    <button class="key key-op"  onclick="inputChar('/')">÷</button>
+
+    <!-- Row 5: numbers 7-9 + × -->
+    <button class="key key-num" onclick="inputChar('7')">7</button>
+    <button class="key key-num" onclick="inputChar('8')">8</button>
+    <button class="key key-num" onclick="inputChar('9')">9</button>
+    <button class="key key-op span2" onclick="inputChar('*')">×</button>
+
+    <!-- Row 6: numbers 4-6 + − -->
+    <button class="key key-num" onclick="inputChar('4')">4</button>
+    <button class="key key-num" onclick="inputChar('5')">5</button>
+    <button class="key key-num" onclick="inputChar('6')">6</button>
+    <button class="key key-op span2" onclick="inputChar('-')">−</button>
+
+    <!-- Row 7: numbers 1-3 + + -->
+    <button class="key key-num" onclick="inputChar('1')">1</button>
+    <button class="key key-num" onclick="inputChar('2')">2</button>
+    <button class="key key-num" onclick="inputChar('3')">3</button>
+    <button class="key key-op span2" onclick="inputChar('+')">+</button>
+
+    <!-- Row 8: 0 . = -->
+    <button class="key key-num span2" onclick="inputChar('0')">0</button>
+    <button class="key key-num" onclick="inputDot()">.</button>
+    <button class="key key-eq span2" onclick="calculate()">=</button>
+
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════ */
+let expression   = '';   // raw expression string used for eval
+let displayExpr  = '';   // human-readable expression shown above the result
+let angleMode    = 'deg'; // 'deg' | 'rad'
+let fracMode     = false; // fraction-entry mode
+let fracNumer    = '';    // numerator collected in frac mode
+let justEvaled   = false; // true right after = pressed
+
+/* ═══════════════════════════════════════════════
+   ANGLE MODE
+═══════════════════════════════════════════════ */
+function setAngleMode(mode) {
+  angleMode = mode;
+  document.getElementById('angle-toggle-btn').textContent =
+      mode === 'deg' ? 'DEG ▾' : 'RAD ▾';
+  document.getElementById('mode-deg').classList.toggle('active', mode === 'deg');
+  document.getElementById('mode-rad').classList.toggle('active', mode === 'rad');
+  closeAngleMenu();
+}
+
+document.getElementById('angle-toggle-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('angle-menu').classList.toggle('open');
+});
+
+document.addEventListener('click', () => closeAngleMenu());
+document.getElementById('angle-menu').addEventListener('click', e => e.stopPropagation());
+
+function closeAngleMenu() {
+  document.getElementById('angle-menu').classList.remove('open');
+}
+
+/* ═══════════════════════════════════════════════
+   CONVERSION HELPERS  (option-menu items)
+═══════════════════════════════════════════════ */
+function convertAndInsert(direction) {
+  closeAngleMenu();
+  // Try to parse the current result number and convert it
+  const val = parseFloat(document.getElementById('main-display').textContent);
+  if (isNaN(val)) return;
+  let result;
+  if (direction === 'deg2rad') {
+    result = val * Math.PI / 180;
+  } else {
+    result = val * 180 / Math.PI;
+  }
+  // Replace expression with converted value
+  expression  = String(result);
+  displayExpr = formatNumber(result);
+  justEvaled  = true;
+  updateDisplay(formatNumber(result));
+}
+
+/* ═══════════════════════════════════════════════
+   FRACTION MODE
+═══════════════════════════════════════════════ */
+function toggleFractionMode() {
+  if (fracMode) {
+    // Second press: commit the fraction
+    if (fracNumer !== '' && expression !== '' &&
+        !expression.endsWith('/')) {
+      // fracNumer is already in expression; just close
+      fracMode = false;
+      fracNumer = '';
+    } else {
+      fracMode = false;
+      fracNumer = '';
+    }
+  } else {
+    fracMode  = true;
+    fracNumer = getCurrentToken();
+  }
+  document.getElementById('frac-indicator').classList.toggle('visible', fracMode);
+}
+
+/* Get the last number token in the expression */
+function getCurrentToken() {
+  const match = expression.match(/([0-9.]+)$/);
+  return match ? match[1] : '';
+}
+
+/* ═══════════════════════════════════════════════
+   INPUT HELPERS
+═══════════════════════════════════════════════ */
+function inputChar(ch) {
+  if (justEvaled) {
+    // If an operator follows a result, continue the expression
+    const ops = ['+','-','*','/','^','%'];
+    if (!ops.includes(ch)) {
+      // Start fresh
+      expression  = '';
+      displayExpr = '';
+    }
+    justEvaled = false;
+  }
+
+  // Fraction mode: when user presses ÷ after entering denominator,
+  // do nothing special — the ⅟ button handles fraction insertion.
+  // But if fracMode is ON and ch is a digit/dot, just accumulate normally.
+  if (fracMode && ch === '/') {
+    // Treat / as the fraction separator in fraction mode
+    insertFractionOperator();
+    return;
+  }
+
+  expression  += ch;
+  displayExpr += opToSymbol(ch);
+  updateDisplay(displayExpr);
+}
+
+function opToSymbol(ch) {
+  const map = { '*': '×', '/': '÷' };
+  return map[ch] || ch;
+}
+
+function insertFractionOperator() {
+  // We already have the numerator in expression; insert '/' internally
+  fracNumer = getCurrentToken();
+  expression  += '/';
+  displayExpr += '/';   // will be rendered as fraction bar
+  fracMode    = false;
+  document.getElementById('frac-indicator').classList.remove('visible');
+  updateDisplay(displayExpr);
+}
+
+function inputDot() {
+  // Prevent double dot in the same number
+  const lastNum = expression.match(/([0-9.]*)$/)?.[1] || '';
+  if (lastNum.includes('.')) return;
+  inputChar('.');
+}
+
+function inputPi() {
+  if (justEvaled) { expression = ''; displayExpr = ''; justEvaled = false; }
+  expression  += 'Math.PI';
+  displayExpr += 'π';
+  updateDisplay(displayExpr);
+}
+
+function inputE() {
+  if (justEvaled) { expression = ''; displayExpr = ''; justEvaled = false; }
+  expression  += 'Math.E';
+  displayExpr += 'e';
+  updateDisplay(displayExpr);
+}
+
+function inputTrig(fn) {
+  if (justEvaled) { expression = ''; displayExpr = ''; justEvaled = false; }
+  // We inject a wrapper that handles deg/rad conversion at eval time
+  expression  += `__${fn}(`;
+  displayExpr += `${fn}(`;
+  updateDisplay(displayExpr);
+}
+
+function inputFn(fn) {
+  if (justEvaled) { expression = ''; displayExpr = ''; justEvaled = false; }
+  switch (fn) {
+    case 'sqrt':
+      expression  += 'Math.sqrt(';
+      displayExpr += '√(';
+      break;
+    case 'pow2':
+      expression  += '**2';
+      displayExpr += '²';
+      break;
+    case 'log10':
+      expression  += 'Math.log10(';
+      displayExpr += 'log(';
+      break;
+    case 'ln':
+      expression  += 'Math.log(';
+      displayExpr += 'ln(';
+      break;
+  }
+  updateDisplay(displayExpr);
+}
+
+function clearAll() {
+  expression  = '';
+  displayExpr = '';
+  fracMode    = false;
+  fracNumer   = '';
+  justEvaled  = false;
+  document.getElementById('frac-indicator').classList.remove('visible');
+  document.getElementById('expr-display').textContent = '';
+  document.getElementById('main-display').textContent = '0';
+}
+
+function backspace() {
+  if (justEvaled) { clearAll(); return; }
+
+  // Handle multi-char tokens at the end (e.g. Math.PI, __sin()
+  const multiTokens = [
+    ['Math.PI',    'π'],
+    ['Math.E',     'e'],
+    ['Math.sqrt(', '√('],
+    ['Math.log10(','log('],
+    ['Math.log(',  'ln('],
+    ['__sin(',     'sin('],
+    ['__cos(',     'cos('],
+    ['__tan(',     'tan('],
+    ['__asin(',    'sin⁻¹('],
+    ['__acos(',    'cos⁻¹('],
+    ['__atan(',    'tan⁻¹('],
+  ];
+  for (const [raw, disp] of multiTokens) {
+    if (expression.endsWith(raw)) {
+      expression  = expression.slice(0, -raw.length);
+      displayExpr = displayExpr.slice(0, -disp.length);
+      updateDisplay(displayExpr);
+      return;
+    }
+  }
+  // Handle ² (stored as **2 in expression)
+  if (expression.endsWith('**2') && displayExpr.endsWith('²')) {
+    expression  = expression.slice(0, -3);
+    displayExpr = displayExpr.slice(0, -1);
+    updateDisplay(displayExpr);
+    return;
+  }
+  // Single char
+  expression  = expression.slice(0, -1);
+  // For displayExpr, account for × → * mapping (1 display char each)
+  displayExpr = displayExpr.slice(0, -1);
+  updateDisplay(displayExpr);
+}
+
+/* ═══════════════════════════════════════════════
+   DISPLAY
+═══════════════════════════════════════════════ */
+function updateDisplay(text) {
+  const mainEl = document.getElementById('main-display');
+  // Render inline fraction bars
+  mainEl.innerHTML = renderFractions(text);
+}
+
+function renderFractions(text) {
+  // Replace  numer/denom  patterns with an HTML fraction
+  return escapeHtml(text).replace(
+    /(\d+(?:\.\d+)?)&#x2F;(\d+(?:\.\d+)?)/g,
+    (_m, n, d) =>
+      `<span class="frac-display">` +
+        `<span class="frac-num">${n}</span>` +
+        `<span class="frac-bar"></span>` +
+        `<span class="frac-den">${d}</span>` +
+      `</span>`
+  );
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#039;')
+    .replace(/\//g, '&#x2F;');
+}
+
+/* ═══════════════════════════════════════════════
+   CALCULATION
+═══════════════════════════════════════════════ */
+function calculate() {
+  if (!expression.trim()) return;
+
+  // Snapshot the full expression for the "history" line above the result
+  const historyExpr = displayExpr;
+
+  // Build safe eval string with trig helpers injected
+  const safeExpr = buildSafeExpression(expression);
+
+  let result;
+  try {
+    // eslint-disable-next-line no-new-func
+    result = Function(
+      '__sin','__cos','__tan','__asin','__acos','__atan',
+      `"use strict"; return (${safeExpr});`
+    )(
+      makeTrigFn('sin'),  makeTrigFn('cos'),  makeTrigFn('tan'),
+      makeATrigFn('asin'),makeATrigFn('acos'),makeATrigFn('atan')
+    );
+  } catch (e) {
+    document.getElementById('main-display').textContent = 'Error';
+    return;
+  }
+
+  if (!isFinite(result)) {
+    document.getElementById('main-display').textContent =
+      isNaN(result) ? 'Undefined' : (result > 0 ? '∞' : '-∞');
+    expression  = '';
+    displayExpr = '';
+    justEvaled  = true;
+    return;
+  }
+
+  const formatted = formatNumber(result);
+  // Show history above
+  document.getElementById('expr-display').textContent = historyExpr + ' =';
+  // Show result in main display
+  document.getElementById('main-display').textContent = formatted;
+
+  // Prepare state for continued operations
+  expression  = String(result);
+  displayExpr = formatted;
+  justEvaled  = true;
+}
+
+function buildSafeExpression(expr) {
+  // Replace % with /100
+  return expr.replace(/(\d+(?:\.\d+)?)%/g, '($1/100)');
+}
+
+/* ── Trig factories ── */
+function makeTrigFn(name) {
+  return (x) => {
+    const rad = angleMode === 'deg' ? x * Math.PI / 180 : x;
+    return Math[name](rad);
+  };
+}
+
+function makeATrigFn(name) {
+  return (x) => {
+    const rad = Math[name](x);
+    return angleMode === 'deg' ? rad * 180 / Math.PI : rad;
+  };
+}
+
+/* ── Number formatting ── */
+function formatNumber(n) {
+  if (Number.isInteger(n) && Math.abs(n) < 1e15) return String(n);
+  // Use toPrecision to avoid floating-point noise
+  const s = parseFloat(n.toPrecision(12));
+  return String(s);
+}
+
+/* ═══════════════════════════════════════════════
+   KEYBOARD SUPPORT
+═══════════════════════════════════════════════ */
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const key = e.key;
+  if ('0123456789'.includes(key))      { inputChar(key); return; }
+  if ('+-*/'.includes(key))            { inputChar(key); return; }
+  if (key === '.')                      { inputDot();    return; }
+  if (key === 'Enter' || key === '=')   { calculate();   return; }
+  if (key === 'Backspace')              { backspace();   return; }
+  if (key === 'Escape')                 { clearAll();    return; }
+  if (key === '(' || key === ')')       { inputChar(key); return; }
+  if (key === '%')                      { inputChar('%'); return; }
+});
+</script>
+</body>
+</html>
