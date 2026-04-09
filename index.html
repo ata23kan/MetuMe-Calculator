@@ -138,6 +138,13 @@
     }
     @keyframes blink { 50% { opacity: 0; } }
 
+    /* ── Pending keyboard buffer ── */
+    .key-pending {
+      opacity: 0.55;
+      text-decoration: underline dotted;
+      text-underline-offset: 2px;
+    }
+
     /* ── Visual fraction ── */
     .frac-display {
       display: inline-flex;
@@ -297,9 +304,10 @@ let angleMode   = 'deg'; // 'deg' | 'rad'
 let justEvaled  = false; // true right after = is pressed
 let resultDisplay = '';  // last formatted result (shown when justEvaled)
 
-// History: last 5 evaluated expressions
+// History: last 10 evaluated expressions
 let history     = [];    // [{tokens: [...], result: string}]
 let historyIdx  = -1;    // -1 = live input; 0..n = browsing history
+let keyBuffer   = '';    // alphabetic characters being typed (pending function name)
 let savedTokens = [];
 let savedCursor = 0;
 let savedJustEvaled = false;
@@ -411,6 +419,33 @@ function inputFn(fn) {
 }
 
 /* ═══════════════════════════════════════════════
+   KEYBOARD BUFFER HELPERS
+   Allow students to type function names (e.g. sin, cos, sqrt) and
+   constants (pi, e) directly from the keyboard.
+═══════════════════════════════════════════════ */
+
+// Try to commit the current keyBuffer as a known function token.
+// Returns true and inserts the token when the buffer matches; false otherwise.
+function tryInsertTypedFunction(buf) {
+  const fn = TYPED_FUNCTIONS[buf];
+  if (!fn) return false;
+  insertToken(fn[0], fn[1]);
+  return true;
+}
+
+// Flush the keyBuffer: commit as a known constant, or insert each letter individually.
+function flushKeyBuffer() {
+  if (!keyBuffer) return;
+  const c = TYPED_CONSTANTS[keyBuffer];
+  if (c) {
+    insertToken(c[0], c[1]);
+  } else {
+    for (const ch of keyBuffer) insertToken(ch, ch);
+  }
+  keyBuffer = '';
+}
+
+/* ═══════════════════════════════════════════════
    CLEAR / BACKSPACE
 ═══════════════════════════════════════════════ */
 function clearAll() {
@@ -419,6 +454,7 @@ function clearAll() {
   justEvaled = false;
   historyIdx = -1;
   resultDisplay = '';
+  keyBuffer = '';
   document.getElementById('expr-display').textContent = '';
   updateDisplay();
 }
@@ -426,6 +462,12 @@ function clearAll() {
 function backspace() {
   if (historyIdx !== -1) { historyIdx = -1; }
   if (justEvaled) { clearAll(); return; }
+  // If there is pending buffer text, delete the last buffered character first
+  if (keyBuffer) {
+    keyBuffer = keyBuffer.slice(0, -1);
+    updateDisplay();
+    return;
+  }
   if (cursorIdx > 0) {
     tokens.splice(cursorIdx - 1, 1);
     cursorIdx--;
@@ -491,6 +533,7 @@ function historyDown() {
 }
 
 function loadHistoryEntry(idx) {
+  keyBuffer = '';
   const entry = history[idx];
   tokens = entry.tokens.map(t => ({ ...t }));
   cursorIdx = tokens.length;
@@ -509,6 +552,31 @@ function loadHistoryEntry(idx) {
 // survives the escapeHtml → renderFractions pipeline unchanged.
 const CURSOR_PH = '\x01';
 
+// Maps typed text (lowercase) to [raw, disp] token pairs for keyboard function entry.
+// Functions: buffer the letters then press "(" to commit.
+// Constants: flushed automatically on non-letter keypress.
+const TYPED_FUNCTIONS = {
+  'sin':    ['__sin(',      'sin('],
+  'cos':    ['__cos(',      'cos('],
+  'tan':    ['__tan(',      'tan('],
+  'asin':   ['__asin(',     'sin⁻¹('],
+  'arcsin': ['__asin(',     'sin⁻¹('],
+  'acos':   ['__acos(',     'cos⁻¹('],
+  'arccos': ['__acos(',     'cos⁻¹('],
+  'atan':   ['__atan(',     'tan⁻¹('],
+  'arctan': ['__atan(',     'tan⁻¹('],
+  'sqrt':   ['Math.sqrt(',  '√('],
+  'log':    ['Math.log10(', 'log('],
+  'log10':  ['Math.log10(', 'log('],
+  'ln':     ['Math.log(',   'ln('],
+  'abs':    ['Math.abs(',   'abs('],
+  'logb':   ['__logb(',     'log_('],
+};
+const TYPED_CONSTANTS = {
+  'pi': ['Math.PI', 'π'],
+  'e':  ['Math.E',  'e'],
+};
+
 function getDisplayHtml() {
   // Build the display string with cursor placeholder injected
   let disp = '';
@@ -518,9 +586,12 @@ function getDisplayHtml() {
   }
   let html = escapeHtml(disp);
   html = renderFractions(html);
-  // Replace the placeholder with the actual cursor span
-  html = html.replace(CURSOR_PH, '<span class="cursor"></span>');
-  return html || '<span class="cursor"></span>';
+  // Replace the placeholder with the cursor span, followed by any pending buffer text
+  const pendingHtml = keyBuffer
+    ? `<span class="cursor"></span><span class="key-pending">${escapeHtml(keyBuffer)}</span>`
+    : '<span class="cursor"></span>';
+  html = html.replace(CURSOR_PH, pendingHtml);
+  return html || pendingHtml;
 }
 
 function updateDisplay() {
@@ -562,6 +633,8 @@ function escapeHtml(str) {
    CALCULATION
 ═══════════════════════════════════════════════ */
 function calculate() {
+  // Commit any pending keyboard buffer before evaluating
+  if (keyBuffer) { flushKeyBuffer(); }
   const expr = tokens.map(t => t.raw).join('');
   if (!expr.trim()) return;
 
@@ -640,20 +713,47 @@ function formatNumber(n) {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   const k = e.key;
+
+  // ── Letter keys: buffer for function / constant typing ──
+  if (/^[a-zA-Z]$/.test(k)) {
+    keyBuffer += k.toLowerCase();
+    updateDisplay();
+    e.preventDefault();
+    return;
+  }
+
+  // ── "(" : commit buffer as a function, or flush + insert "(" ──
+  if (k === '(') {
+    if (keyBuffer) {
+      if (!tryInsertTypedFunction(keyBuffer)) {
+        flushKeyBuffer();
+        insertToken('(', '(');
+      }
+      keyBuffer = '';
+    } else {
+      insertToken('(', '(');
+    }
+    e.preventDefault();
+    return;
+  }
+
+  // ── All other keys: flush any pending buffer first ──
+  // (Backspace and Escape are handled before the flush since they affect the buffer themselves)
+  if (k === 'Backspace')          { backspace();             e.preventDefault(); return; }
+  if (k === 'Escape')             { clearAll();              e.preventDefault(); return; }
+  if (keyBuffer) { flushKeyBuffer(); }
+
   if ('0123456789'.includes(k)) { insertToken(k, k);        e.preventDefault(); return; }
   if (k === '+')        { insertToken('+', '+');             e.preventDefault(); return; }
   if (k === '-')        { insertToken('-', '−');             e.preventDefault(); return; }
   if (k === '*')        { insertToken('*', '×');             e.preventDefault(); return; }
   if (k === '/')        { insertToken('/', '÷');             e.preventDefault(); return; }
   if (k === '%')        { insertToken('%', '%');             e.preventDefault(); return; }
-  if (k === '(')        { insertToken('(', '(');             e.preventDefault(); return; }
   if (k === ')')        { insertToken(')', ')');             e.preventDefault(); return; }
   if (k === ',')        { insertToken(',', ',');             e.preventDefault(); return; }
   if (k === '^')        { insertToken('**', '^');            e.preventDefault(); return; }
   if (k === '.')        { inputDot();                        e.preventDefault(); return; }
   if (k === 'Enter' || k === '=') { calculate();            e.preventDefault(); return; }
-  if (k === 'Backspace')          { backspace();             e.preventDefault(); return; }
-  if (k === 'Escape')             { clearAll();              e.preventDefault(); return; }
   if (k === 'ArrowLeft')          { cursorLeft();            e.preventDefault(); return; }
   if (k === 'ArrowRight')         { cursorRight();           e.preventDefault(); return; }
   if (k === 'ArrowUp')            { historyUp();             e.preventDefault(); return; }
