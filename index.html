@@ -436,6 +436,23 @@ function tryRecognizeFunctionFromTokens() {
   return true;
 }
 
+// When any non-letter key is pressed, look back at consecutive single-letter tokens
+// before the cursor. If they spell a known constant (pi, e), replace them with the
+// proper constant token. Called before inserting digits, operators, etc.
+function tryRecognizeConstantFromTokens() {
+  let end = cursorIdx;
+  let start = end;
+  while (start > 0 && /^[a-z]$/i.test(tokens[start - 1].raw)) {
+    start--;
+  }
+  if (start === end) return;
+  const name = tokens.slice(start, end).map(t => t.raw).join('').toLowerCase();
+  const c = TYPED_CONSTANTS[name];
+  if (!c) return;
+  tokens.splice(start, end - start, { raw: c[0], disp: c[1] });
+  cursorIdx = start + 1;
+}
+
 /* ═══════════════════════════════════════════════
    CLEAR / BACKSPACE
 ═══════════════════════════════════════════════ */
@@ -581,17 +598,9 @@ function updateDisplay() {
   } else {
     mainEl.innerHTML = getDisplayHtml();
     // Scroll the main-display container to keep the cursor visible.
-    const CURSOR_SCROLL_PADDING = 4;
     const cur = mainEl.querySelector('.cursor');
     if (cur) {
-      const curLeft  = cur.offsetLeft;
-      const curRight = curLeft + cur.offsetWidth;
-      const visRight = mainEl.scrollLeft + mainEl.clientWidth;
-      if (curRight > visRight) {
-        mainEl.scrollLeft = curRight - mainEl.clientWidth + CURSOR_SCROLL_PADDING;
-      } else if (curLeft < mainEl.scrollLeft) {
-        mainEl.scrollLeft = curLeft - CURSOR_SCROLL_PADDING;
-      }
+      cur.scrollIntoView({ inline: 'nearest', block: 'nearest' });
     }
   }
 }
@@ -603,7 +612,7 @@ function renderFractions(html) {
   //   - a parenthesised expression, allowing one level of nested parens:
   //       \(  ( any non-paren char  |  a fully nested (…) group )*  \)
   //   - a plain decimal number: \d+(\.\d+)?
-  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?)';
+  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?|π|e)';
   const re = new RegExp(`(${group})&#x2F;(${group})`, 'g');
   return html.replace(
     re,
@@ -719,6 +728,7 @@ document.addEventListener('keydown', e => {
   // ── "(" : check preceding letter tokens for a function name, else insert "(" ──
   if (k === '(') {
     if (!tryRecognizeFunctionFromTokens()) {
+      tryRecognizeConstantFromTokens();
       insertToken('(', '(');
     }
     updateDisplay();
@@ -726,9 +736,10 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  // ── All other keys ──
+  // ── All other keys: resolve any trailing constant first ──
   if (k === 'Backspace')          { backspace();             e.preventDefault(); return; }
   if (k === 'Escape')             { clearAll();              e.preventDefault(); return; }
+  tryRecognizeConstantFromTokens();
 
   if ('0123456789'.includes(k)) { insertToken(k, k);        e.preventDefault(); return; }
   if (k === '+')        { insertToken('+', '+');             e.preventDefault(); return; }
