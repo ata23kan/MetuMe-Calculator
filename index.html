@@ -261,14 +261,14 @@
     <button class="key key-trig" onclick="inputTrig('sin')">sin</button>
     <button class="key key-trig" onclick="inputTrig('cos')">cos</button>
     <button class="key key-trig" onclick="inputTrig('tan')">tan</button>
-    <button class="key key-fn"   onclick="inputFn('log10')">log</button>
+    <button class="key key-fn"   onclick="inputFn('logb')">log_(</button>
     <button class="key key-fn"   onclick="inputFn('ln')">ln</button>
 
-    <!-- Row 2: inverse trig + logb + x^y -->
+    <!-- Row 2: inverse trig + exp + x^y -->
     <button class="key key-trig" onclick="inputTrig('asin')">sin⁻¹</button>
     <button class="key key-trig" onclick="inputTrig('acos')">cos⁻¹</button>
     <button class="key key-trig" onclick="inputTrig('atan')">tan⁻¹</button>
-    <button class="key key-fn"   onclick="inputFn('logb')">log_(</button>
+    <button class="key key-fn"   onclick="inputFn('exp')">exp(</button>
     <button class="key key-fn"   onclick="insertToken('**','^')">xʸ</button>
 
     <!-- Row 3: utility + sqrt + x² -->
@@ -452,6 +452,7 @@ function inputFn(fn) {
     case 'log10': insertToken('Math.log10(', 'log(');  break;
     case 'ln':    insertToken('Math.log(',   'ln(');   break;
     case 'logb':  insertToken('__logb(',     'log_('); break;
+    case 'exp':   insertToken('Math.exp(',   'exp(');  break;
   }
 }
 
@@ -657,6 +658,7 @@ const TYPED_FUNCTIONS = {
   'ln':     ['Math.log(',   'ln('],
   'abs':    ['Math.abs(',   'abs('],
   'logb':   ['__logb(',     'log_('],
+  'exp':    ['Math.exp(',   'exp('],
 };
 const TYPED_CONSTANTS = {
   'pi': ['Math.PI', 'π'],
