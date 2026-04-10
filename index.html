@@ -796,6 +796,7 @@ function makeATrigFn(name) {
 
 /* ── Number formatting ── */
 function formatNumber(n) {
+  if (n !== 0 && Math.abs(n) < 1e-9) return '0';
   if (Number.isInteger(n) && Math.abs(n) < 1e15) return String(n);
   const s = parseFloat(n.toPrecision(12));
   return String(s);
