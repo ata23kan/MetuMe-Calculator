@@ -98,6 +98,7 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      position: relative;
       gap: 6px;
     }
 
@@ -137,6 +138,33 @@
       flex-shrink: 0;
     }
     @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── STO picker overlay ── */
+    .sto-overlay {
+      display: none;
+      position: absolute;
+      bottom: 0;
+      left: 0; right: 0;
+      background: rgba(15, 52, 96, 0.97);
+      border-top: 1px solid #e94560;
+      border-radius: 0 0 12px 12px;
+      padding: 10px 12px;
+      z-index: 5;
+    }
+    .sto-overlay.visible { display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .sto-label { color: #ffd54f; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .sto-var-btn {
+      background: #1a2a4a; color: #e2e8f0; border: 1px solid #4a7abf;
+      border-radius: 8px; padding: 8px 14px; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: background .15s;
+    }
+    .sto-var-btn:hover { background: #e94560; color: #fff; border-color: #e94560; }
+    .sto-cancel-btn {
+      background: transparent; color: #94a3b8; border: 1px solid #94a3b8;
+      border-radius: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .sto-cancel-btn:hover { color: #e94560; border-color: #e94560; }
 
     /* ── Visual fraction ── */
     .frac-display {
@@ -215,6 +243,15 @@
   <div class="display-wrapper">
     <div id="expr-display"></div>
     <div id="main-display"><span class="cursor"></span></div>
+    <!-- STO variable picker -->
+    <div class="sto-overlay" id="sto-picker">
+      <span class="sto-label">STO →</span>
+      <button class="sto-var-btn" onclick="storeToVar('A')">A</button>
+      <button class="sto-var-btn" onclick="storeToVar('B')">B</button>
+      <button class="sto-var-btn" onclick="storeToVar('C')">C</button>
+      <button class="sto-var-btn" onclick="storeToVar('D')">D</button>
+      <button class="sto-cancel-btn" onclick="cancelSto()">✕</button>
+    </div>
   </div>
 
   <!-- Buttons (5 columns) -->
@@ -248,11 +285,11 @@
     <button class="key key-nav" onclick="cursorRight()">▶</button>
     <button class="key key-util" onclick="backspace()">⌫</button>
 
-    <!-- Row 5: AC + parens + comma + divide -->
+    <!-- Row 5: AC + parens + STO + divide -->
     <button class="key key-clear" onclick="clearAll()">AC</button>
     <button class="key key-fn"    onclick="insertToken('(','(')">( </button>
     <button class="key key-fn"    onclick="insertToken(')',')')"> )</button>
-    <button class="key key-fn"    onclick="insertToken(',',',')"> , </button>
+    <button class="key key-util"  onclick="enterStoMode()">STO</button>
     <button class="key key-op"    onclick="insertToken('/','÷')">÷</button>
 
     <!-- Row 6: 7-9 + × -->
@@ -296,6 +333,14 @@ let cursorIdx   = 0;     // insert/cursor position within tokens array
 let angleMode   = 'deg'; // 'deg' | 'rad'
 let justEvaled  = false; // true right after = is pressed
 let resultDisplay = '';  // last formatted result (shown when justEvaled)
+
+// Variable storage – default values are 1 (neutral multiplicative identity, safe for all ops)
+const storedVars = { A: 1, B: 1, C: 1, D: 1 };
+let stoMode = false; // true when waiting for A/B/C/D to confirm storage
+
+// NOTE: Variables are stored under uppercase keys (A-D) in storedVars, but the JS expression
+// uses lowercase identifiers (a-d) because the keyboard inserts lowercase letter tokens.
+// The Function evaluator receives them as lowercase params mapped from storedVars.
 
 // History: last 10 evaluated expressions
 let history     = [];    // [{tokens: [...], result: string}]
@@ -408,6 +453,47 @@ function inputFn(fn) {
     case 'ln':    insertToken('Math.log(',   'ln(');   break;
     case 'logb':  insertToken('__logb(',     'log_('); break;
   }
+}
+
+/* ═══════════════════════════════════════════════
+   VARIABLE STORAGE  (STO)
+═══════════════════════════════════════════════ */
+function enterStoMode() {
+  stoMode = true;
+  document.getElementById('sto-picker').classList.add('visible');
+}
+
+function storeToVar(name) {
+  let val;
+  if (justEvaled) {
+    val = parseFloat(resultDisplay);
+  } else {
+    const expr = tokens.map(t => t.raw).join('');
+    if (!expr.trim()) { cancelSto(); return; }
+    const safeExpr = buildSafeExpression(expr);
+    try {
+      // eslint-disable-next-line no-new-func
+      val = Function(
+        '__sin', '__cos', '__tan', '__asin', '__acos', '__atan', '__logb',
+        'a', 'b', 'c', 'd',
+        `"use strict"; return (${safeExpr});`
+      )(
+        makeTrigFn('sin'),   makeTrigFn('cos'),   makeTrigFn('tan'),
+        makeATrigFn('asin'), makeATrigFn('acos'), makeATrigFn('atan'),
+        (base, x) => Math.log(x) / Math.log(base),
+        storedVars.A, storedVars.B, storedVars.C, storedVars.D
+      );
+    } catch (e) { cancelSto(); return; }
+  }
+  if (!isFinite(val) || isNaN(val)) { cancelSto(); return; }
+  storedVars[name] = val;
+  document.getElementById('expr-display').textContent = `Stored: ${name} = ${formatNumber(val)}`;
+  cancelSto();
+}
+
+function cancelSto() {
+  stoMode = false;
+  document.getElementById('sto-picker').classList.remove('visible');
 }
 
 /* ═══════════════════════════════════════════════
@@ -612,7 +698,7 @@ function renderFractions(html) {
   //   - a parenthesised expression, allowing one level of nested parens:
   //       \(  ( any non-paren char  |  a fully nested (…) group )*  \)
   //   - a plain decimal number: \d+(\.\d+)?
-  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?|π|e)';
+  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?|π|e|[ABCD])';
   const re = new RegExp(`(${group})&#x2F;(${group})`, 'g');
   return html.replace(
     re,
@@ -650,12 +736,14 @@ function calculate() {
     // eslint-disable-next-line no-new-func
     result = Function(
       '__sin', '__cos', '__tan', '__asin', '__acos', '__atan', '__logb',
+      'a', 'b', 'c', 'd',
       `"use strict"; return (${safeExpr});`
     )(
       makeTrigFn('sin'),   makeTrigFn('cos'),   makeTrigFn('tan'),
       makeATrigFn('asin'), makeATrigFn('acos'), makeATrigFn('atan'),
       // __logb(base, x) computes log base `base` of `x` via the change-of-base formula
-      (base, x) => Math.log(x) / Math.log(base)
+      (base, x) => Math.log(x) / Math.log(base),
+      storedVars.A, storedVars.B, storedVars.C, storedVars.D
     );
   } catch (e) {
     document.getElementById('main-display').textContent = 'Error';
@@ -718,9 +806,23 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   const k = e.key;
 
+  // ── STO mode: wait for A/B/C/D to select target variable ──
+  if (stoMode) {
+    if (k === 'Escape') { cancelSto(); e.preventDefault(); return; }
+    const upper = k.toUpperCase();
+    if ('ABCD'.includes(upper) && upper.length === 1) {
+      storeToVar(upper); e.preventDefault(); return;
+    }
+    cancelSto();
+    // fall through to handle the key normally
+  }
+
   // ── Letter keys: insert immediately as individual tokens ──
   if (/^[a-zA-Z]$/.test(k)) {
-    insertToken(k.toLowerCase(), k.toLowerCase());
+    const raw = k.toLowerCase();
+    // Variables A-D: displayed uppercase but stored as lowercase 'a'-'d' in the raw expression
+    const disp = 'abcd'.includes(raw) ? raw.toUpperCase() : raw;
+    insertToken(raw, disp);
     e.preventDefault();
     return;
   }
