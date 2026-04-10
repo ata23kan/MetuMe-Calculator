@@ -138,13 +138,6 @@
     }
     @keyframes blink { 50% { opacity: 0; } }
 
-    /* ── Pending keyboard buffer ── */
-    .key-pending {
-      opacity: 0.55;
-      text-decoration: underline dotted;
-      text-underline-offset: 2px;
-    }
-
     /* ── Visual fraction ── */
     .frac-display {
       display: inline-flex;
@@ -588,7 +581,7 @@ function getDisplayHtml() {
   html = renderFractions(html);
   // Replace the placeholder with the cursor span, followed by any pending buffer text
   const pendingHtml = keyBuffer
-    ? `<span class="cursor"></span><span class="key-pending">${escapeHtml(keyBuffer)}</span>`
+    ? `<span class="cursor"></span>${escapeHtml(keyBuffer)}`
     : '<span class="cursor"></span>';
   html = html.replace(CURSOR_PH, pendingHtml);
   return html || pendingHtml;
@@ -600,16 +593,28 @@ function updateDisplay() {
     mainEl.textContent = resultDisplay;
   } else {
     mainEl.innerHTML = getDisplayHtml();
-    // Scroll to keep cursor visible
+    // Scroll the main-display container to keep the cursor visible
     const cur = mainEl.querySelector('.cursor');
-    if (cur) cur.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    if (cur) {
+      const mainRect = mainEl.getBoundingClientRect();
+      const curRect  = cur.getBoundingClientRect();
+      if (curRect.right > mainRect.right) {
+        mainEl.scrollLeft += curRect.right - mainRect.right + 4;
+      } else if (curRect.left < mainRect.left) {
+        mainEl.scrollLeft -= mainRect.left - curRect.left + 4;
+      }
+    }
   }
 }
 
 function renderFractions(html) {
-  // Convert digit/digit patterns to visual stacked fractions
+  // Convert digit/digit or (expr)/(expr) patterns to visual stacked fractions.
+  // After escapeHtml, the fraction "/" becomes "&#x2F;" while "÷" stays as "÷".
+  // Supports simple numbers and parenthesised groups (including one level of nesting).
+  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?)';
+  const re = new RegExp(`(${group})&#x2F;(${group})`, 'g');
   return html.replace(
-    /(\d+(?:\.\d+)?)&#x2F;(\d+(?:\.\d+)?)/g,
+    re,
     (_m, n, d) =>
       `<span class="frac-display">` +
         `<span class="frac-num">${n}</span>` +
