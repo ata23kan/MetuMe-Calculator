@@ -593,15 +593,17 @@ function updateDisplay() {
     mainEl.textContent = resultDisplay;
   } else {
     mainEl.innerHTML = getDisplayHtml();
-    // Scroll the main-display container to keep the cursor visible
+    // Scroll the main-display container to keep the cursor visible.
+    // A small padding (px) prevents the cursor from sitting flush against the edge.
+    const CURSOR_SCROLL_PADDING = 4;
     const cur = mainEl.querySelector('.cursor');
     if (cur) {
       const mainRect = mainEl.getBoundingClientRect();
       const curRect  = cur.getBoundingClientRect();
       if (curRect.right > mainRect.right) {
-        mainEl.scrollLeft += curRect.right - mainRect.right + 4;
+        mainEl.scrollLeft += curRect.right - mainRect.right + CURSOR_SCROLL_PADDING;
       } else if (curRect.left < mainRect.left) {
-        mainEl.scrollLeft -= mainRect.left - curRect.left + 4;
+        mainEl.scrollLeft -= mainRect.left - curRect.left + CURSOR_SCROLL_PADDING;
       }
     }
   }
@@ -610,7 +612,10 @@ function updateDisplay() {
 function renderFractions(html) {
   // Convert digit/digit or (expr)/(expr) patterns to visual stacked fractions.
   // After escapeHtml, the fraction "/" becomes "&#x2F;" while "÷" stays as "÷".
-  // Supports simple numbers and parenthesised groups (including one level of nesting).
+  // group matches either:
+  //   - a parenthesised expression, allowing one level of nested parens:
+  //       \(  ( any non-paren char  |  a fully nested (…) group )*  \)
+  //   - a plain decimal number: \d+(\.\d+)?
   const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?)';
   const re = new RegExp(`(${group})&#x2F;(${group})`, 'g');
   return html.replace(
