@@ -138,13 +138,6 @@
     }
     @keyframes blink { 50% { opacity: 0; } }
 
-    /* ── Pending keyboard buffer ── */
-    .key-pending {
-      opacity: 0.55;
-      text-decoration: underline dotted;
-      text-underline-offset: 2px;
-    }
-
     /* ── Visual fraction ── */
     .frac-display {
       display: inline-flex;
@@ -307,7 +300,6 @@ let resultDisplay = '';  // last formatted result (shown when justEvaled)
 // History: last 10 evaluated expressions
 let history     = [];    // [{tokens: [...], result: string}]
 let historyIdx  = -1;    // -1 = live input; 0..n = browsing history
-let keyBuffer   = '';    // alphabetic characters being typed (pending function name)
 let savedTokens = [];
 let savedCursor = 0;
 let savedJustEvaled = false;
@@ -419,30 +411,46 @@ function inputFn(fn) {
 }
 
 /* ═══════════════════════════════════════════════
-   KEYBOARD BUFFER HELPERS
-   Allow students to type function names (e.g. sin, cos, sqrt) and
-   constants (pi, e) directly from the keyboard.
+   KEYBOARD FUNCTION RECOGNITION
+   When "(" is pressed, look back at consecutive single-letter tokens
+   before the cursor. If they spell a known function name, replace them
+   with the proper function token (which includes the opening parenthesis).
 ═══════════════════════════════════════════════ */
 
-// Try to commit the current keyBuffer as a known function token.
-// Returns true and inserts the token when the buffer matches; false otherwise.
-function tryInsertTypedFunction(buf) {
-  const fn = TYPED_FUNCTIONS[buf];
+// When "(" is pressed from the keyboard, look back at consecutive single-letter tokens
+// before the cursor. If they spell a known function name, replace them with the proper
+// function token (which already includes the opening parenthesis).
+// Returns true if a function was recognised and inserted; false otherwise.
+function tryRecognizeFunctionFromTokens() {
+  let end = cursorIdx;
+  let start = end;
+  while (start > 0 && /^[a-z]$/i.test(tokens[start - 1].raw)) {
+    start--;
+  }
+  if (start === end) return false;
+  const name = tokens.slice(start, end).map(t => t.raw).join('').toLowerCase();
+  const fn = TYPED_FUNCTIONS[name];
   if (!fn) return false;
-  insertToken(fn[0], fn[1]);
+  tokens.splice(start, end - start, { raw: fn[0], disp: fn[1] });
+  cursorIdx = start + 1;
   return true;
 }
 
-// Flush the keyBuffer: commit as a known constant, or insert each letter individually.
-function flushKeyBuffer() {
-  if (!keyBuffer) return;
-  const c = TYPED_CONSTANTS[keyBuffer];
-  if (c) {
-    insertToken(c[0], c[1]);
-  } else {
-    for (const ch of keyBuffer) insertToken(ch, ch);
+// When any non-letter key is pressed, look back at consecutive single-letter tokens
+// before the cursor. If they spell a known constant (pi, e), replace them with the
+// proper constant token. Called before inserting digits, operators, etc.
+function tryRecognizeConstantFromTokens() {
+  let end = cursorIdx;
+  let start = end;
+  while (start > 0 && /^[a-z]$/i.test(tokens[start - 1].raw)) {
+    start--;
   }
-  keyBuffer = '';
+  if (start === end) return;
+  const name = tokens.slice(start, end).map(t => t.raw).join('').toLowerCase();
+  const c = TYPED_CONSTANTS[name];
+  if (!c) return;
+  tokens.splice(start, end - start, { raw: c[0], disp: c[1] });
+  cursorIdx = start + 1;
 }
 
 /* ═══════════════════════════════════════════════
@@ -454,7 +462,6 @@ function clearAll() {
   justEvaled = false;
   historyIdx = -1;
   resultDisplay = '';
-  keyBuffer = '';
   document.getElementById('expr-display').textContent = '';
   updateDisplay();
 }
@@ -462,12 +469,6 @@ function clearAll() {
 function backspace() {
   if (historyIdx !== -1) { historyIdx = -1; }
   if (justEvaled) { clearAll(); return; }
-  // If there is pending buffer text, delete the last buffered character first
-  if (keyBuffer) {
-    keyBuffer = keyBuffer.slice(0, -1);
-    updateDisplay();
-    return;
-  }
   if (cursorIdx > 0) {
     tokens.splice(cursorIdx - 1, 1);
     cursorIdx--;
@@ -533,7 +534,6 @@ function historyDown() {
 }
 
 function loadHistoryEntry(idx) {
-  keyBuffer = '';
   const entry = history[idx];
   tokens = entry.tokens.map(t => ({ ...t }));
   cursorIdx = tokens.length;
@@ -586,12 +586,9 @@ function getDisplayHtml() {
   }
   let html = escapeHtml(disp);
   html = renderFractions(html);
-  // Replace the placeholder with the cursor span, followed by any pending buffer text
-  const pendingHtml = keyBuffer
-    ? `<span class="cursor"></span><span class="key-pending">${escapeHtml(keyBuffer)}</span>`
-    : '<span class="cursor"></span>';
-  html = html.replace(CURSOR_PH, pendingHtml);
-  return html || pendingHtml;
+  // Replace the placeholder with the cursor span
+  html = html.replace(CURSOR_PH, '<span class="cursor"></span>');
+  return html || '<span class="cursor"></span>';
 }
 
 function updateDisplay() {
@@ -600,16 +597,25 @@ function updateDisplay() {
     mainEl.textContent = resultDisplay;
   } else {
     mainEl.innerHTML = getDisplayHtml();
-    // Scroll to keep cursor visible
+    // Scroll the main-display container to keep the cursor visible.
     const cur = mainEl.querySelector('.cursor');
-    if (cur) cur.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    if (cur) {
+      cur.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    }
   }
 }
 
 function renderFractions(html) {
-  // Convert digit/digit patterns to visual stacked fractions
+  // Convert digit/digit or (expr)/(expr) patterns to visual stacked fractions.
+  // After escapeHtml, the fraction "/" becomes "&#x2F;" while "÷" stays as "÷".
+  // group matches either:
+  //   - a parenthesised expression, allowing one level of nested parens:
+  //       \(  ( any non-paren char  |  a fully nested (…) group )*  \)
+  //   - a plain decimal number: \d+(\.\d+)?
+  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?|π|e)';
+  const re = new RegExp(`(${group})&#x2F;(${group})`, 'g');
   return html.replace(
-    /(\d+(?:\.\d+)?)&#x2F;(\d+(?:\.\d+)?)/g,
+    re,
     (_m, n, d) =>
       `<span class="frac-display">` +
         `<span class="frac-num">${n}</span>` +
@@ -633,8 +639,6 @@ function escapeHtml(str) {
    CALCULATION
 ═══════════════════════════════════════════════ */
 function calculate() {
-  // Commit any pending keyboard buffer before evaluating
-  if (keyBuffer) { flushKeyBuffer(); }
   const expr = tokens.map(t => t.raw).join('');
   if (!expr.trim()) return;
 
@@ -714,34 +718,28 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   const k = e.key;
 
-  // ── Letter keys: buffer for function / constant typing ──
+  // ── Letter keys: insert immediately as individual tokens ──
   if (/^[a-zA-Z]$/.test(k)) {
-    keyBuffer += k.toLowerCase();
+    insertToken(k.toLowerCase(), k.toLowerCase());
+    e.preventDefault();
+    return;
+  }
+
+  // ── "(" : check preceding letter tokens for a function name, else insert "(" ──
+  if (k === '(') {
+    if (!tryRecognizeFunctionFromTokens()) {
+      tryRecognizeConstantFromTokens();
+      insertToken('(', '(');
+    }
     updateDisplay();
     e.preventDefault();
     return;
   }
 
-  // ── "(" : commit buffer as a function, or flush + insert "(" ──
-  if (k === '(') {
-    if (keyBuffer) {
-      if (!tryInsertTypedFunction(keyBuffer)) {
-        flushKeyBuffer();
-        insertToken('(', '(');
-      }
-      keyBuffer = '';
-    } else {
-      insertToken('(', '(');
-    }
-    e.preventDefault();
-    return;
-  }
-
-  // ── All other keys: flush any pending buffer first ──
-  // (Backspace and Escape are handled before the flush since they affect the buffer themselves)
+  // ── All other keys: resolve any trailing constant first ──
   if (k === 'Backspace')          { backspace();             e.preventDefault(); return; }
   if (k === 'Escape')             { clearAll();              e.preventDefault(); return; }
-  if (keyBuffer) { flushKeyBuffer(); }
+  tryRecognizeConstantFromTokens();
 
   if ('0123456789'.includes(k)) { insertToken(k, k);        e.preventDefault(); return; }
   if (k === '+')        { insertToken('+', '+');             e.preventDefault(); return; }
