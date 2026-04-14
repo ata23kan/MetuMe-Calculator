@@ -310,8 +310,8 @@
     <button class="key key-num" onclick="insertToken('3','3')">3</button>
     <button class="key key-op span2" onclick="insertToken('+','+')">+</button>
 
-    <!-- Row 9: % + 0 + . + = -->
-    <button class="key key-util" onclick="insertToken('%','%')">%</button>
+    <!-- Row 9: Ans + 0 + . + = -->
+    <button class="key key-util" onclick="inputAns()" aria-label="Insert last answer">Ans</button>
     <button class="key key-num"  onclick="insertToken('0','0')">0</button>
     <button class="key key-num"  onclick="inputDot()">.</button>
     <button class="key key-eq span2" onclick="calculate()">=</button>
@@ -333,6 +333,7 @@ let cursorIdx   = 0;     // insert/cursor position within tokens array
 let angleMode   = 'deg'; // 'deg' | 'rad'
 let justEvaled  = false; // true right after = is pressed
 let resultDisplay = '';  // last formatted result (shown when justEvaled)
+let ansValue    = 0;     // last successfully calculated numeric result ("Ans"); 0 before first calculation
 
 // Variable storage – default values are 1 (neutral multiplicative identity, safe for all ops)
 const storedVars = { A: 1, B: 1, C: 1, D: 1 };
@@ -429,8 +430,9 @@ function inputDot() {
   insertToken('.', '.');
 }
 
-function inputPi() { insertToken('Math.PI', 'π'); }
-function inputE()  { insertToken('Math.E',  'e'); }
+function inputPi()  { insertToken('Math.PI', 'π'); }
+function inputE()   { insertToken('Math.E',  'e'); }
+function inputAns() { insertToken('__ans', 'Ans'); }
 
 function inputFraction() {
   // Insert a visual-fraction slash (renders as stacked fraction for n/m)
@@ -475,13 +477,14 @@ function storeToVar(name) {
     try {
       // eslint-disable-next-line no-new-func
       val = Function(
-        '__sin', '__cos', '__tan', '__asin', '__acos', '__atan', '__logb',
+        '__sin', '__cos', '__tan', '__asin', '__acos', '__atan', '__logb', '__ans',
         'a', 'b', 'c', 'd',
         `"use strict"; return (${safeExpr});`
       )(
         makeTrigFn('sin'),   makeTrigFn('cos'),   makeTrigFn('tan'),
         makeATrigFn('asin'), makeATrigFn('acos'), makeATrigFn('atan'),
         (base, x) => Math.log(x) / Math.log(base),
+        ansValue,
         storedVars.A, storedVars.B, storedVars.C, storedVars.D
       );
     } catch (e) { cancelSto(); return; }
@@ -661,8 +664,9 @@ const TYPED_FUNCTIONS = {
   'exp':    ['Math.exp(',   'exp('],
 };
 const TYPED_CONSTANTS = {
-  'pi': ['Math.PI', 'π'],
-  'e':  ['Math.E',  'e'],
+  'pi':  ['Math.PI', 'π'],
+  'e':   ['Math.E',  'e'],
+  'ans': ['__ans',   'Ans'],
 };
 
 function getDisplayHtml() {
@@ -700,7 +704,7 @@ function renderFractions(html) {
   //   - a parenthesised expression, allowing one level of nested parens:
   //       \(  ( any non-paren char  |  a fully nested (…) group )*  \)
   //   - a plain decimal number: \d+(\.\d+)?
-  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?|π|e|[ABCD])';
+  const group = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|\\d+(?:\\.\\d+)?|π|e|Ans|[ABCD])';
   const re = new RegExp(`(${group})&#x2F;(${group})`, 'g');
   return html.replace(
     re,
@@ -737,7 +741,7 @@ function calculate() {
   try {
     // eslint-disable-next-line no-new-func
     result = Function(
-      '__sin', '__cos', '__tan', '__asin', '__acos', '__atan', '__logb',
+      '__sin', '__cos', '__tan', '__asin', '__acos', '__atan', '__logb', '__ans',
       'a', 'b', 'c', 'd',
       `"use strict"; return (${safeExpr});`
     )(
@@ -745,6 +749,7 @@ function calculate() {
       makeATrigFn('asin'), makeATrigFn('acos'), makeATrigFn('atan'),
       // __logb(base, x) computes log base `base` of `x` via the change-of-base formula
       (base, x) => Math.log(x) / Math.log(base),
+      ansValue,
       storedVars.A, storedVars.B, storedVars.C, storedVars.D
     );
   } catch (e) {
@@ -764,6 +769,7 @@ function calculate() {
   }
 
   const formatted = formatNumber(result);
+  ansValue = result;
 
   // Add to history (keep last MAX_HISTORY entries)
   if (history.length >= MAX_HISTORY) history.shift();
