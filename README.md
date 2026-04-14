@@ -16,6 +16,7 @@ A basic calculator to be used in ME210 exams in Middle East Technical University
 Specifically designed for multi-step engineering problems, you can store intermediate results to avoid rounding errors:
 * Click **STO** then select a variable (**A, B, C, or D**) to store.
 * Simply type the letter (A, B, C, or D) into your expression to call the stored variable.
+* The last calculated value is stored in `Ans` variable. You can call it with the **Ans** button or simply type Ans from your keyboard.
 
 ### 4. Visual fractions
 * The `⅟` key allows you to input fractions that render vertically, making complex quotients easier to read and verify.
